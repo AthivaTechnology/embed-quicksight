@@ -82,7 +82,7 @@ Resources:
         AllowOrigin: "'*'"
       TracingEnabled: true
       AccessLogSetting:
-        DestinationArn: !GetAtt QuickSightEmbedAPI.Arn
+        DestinationArn: !GetAtt QuickSightApiLogGroup.Arn
         Format: "{\"requestId\":\"$context.requestId\",\"ip\":\"$context.identity.sourceIp\",\"requestTime\":\"$context.requestTime\",\"httpMethod\":\"$context.httpMethod\",\"path\":\"$context.path\",\"status\":\"$context.status\",\"responseLatency\":\"$context.responseLatency\",\"integrationLatency\":\"$context.integrationLatency\",\"userAgent\":\"$context.identity.userAgent\"}"
       MethodSettings:
         - DataTraceEnabled: true   # Enables Data Tracing
@@ -90,6 +90,12 @@ Resources:
           MetricsEnabled: true     # Enables Detailed Metrics
           ResourcePath: "/*"       # Applies to all routes
           HttpMethod: "*"          # Applies to all methods
+
+  QuickSightApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/apigateway/${QuickSightEmbedAPI}"
+      RetentionInDays: 30  # Set retention period (optional)
 
 
   EmbedQuickSightFunction:

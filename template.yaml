@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  env:
+    Type: String
+    Description: Deployment Env
+  cognitoclientid:
+    Type: String
+    Description: Cognito Client Id
+  customdomain:
+    Type: String
+    Description: API Custom domain
+  dashboardregion:
+    Type: String
+    Description: Quick Sight Dashboard Region
+  certificatearn:
+    Type: String
+    Description: Certificate ARN
+  zoneid:
+    Type: String
+    Description: Zone Id
+  snstopicarn:
+    Type: String
+    Description: error alarms sns topic
+
+
+Resources:
+
+  EmbedQuickSightLambdaAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: QuickSightPermissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - quicksight:GenerateEmbedUrlForRegisteredUser
+                  - quicksight:SearchDashboards
+                  - quicksight:DescribeUser
+                  - quicksight:RegisterUser
+                  - quicksight:CreateGroup
+                  - quicksight:CreateGroupMembership
+                Resource: "*"
+        - PolicyName: CloudWatchAndIAMPermissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - iam:*OpenIDConnectProvider*
+                Resource: "*"
+      RoleName: !Sub "${AWS::StackName}--lambda-access-role"
+      
+  QuickSightEmbedAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref env
+      Domain:
+        DomainName: !Ref customdomain 
+        CertificateArn: !Ref certificatearn 
+        EndpointConfiguration: EDGE
+        Route53:
+          HostedZoneId: !Ref zoneid
+      Cors:
+        AllowMethods: "'DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+      TracingEnabled: true
+      AccessLogSetting:
+        DestinationArn: !GetAtt QuickSightApiLogGroup.Arn
+        Format: "{\"requestId\":\"$context.requestId\",\"ip\":\"$context.identity.sourceIp\",\"requestTime\":\"$context.requestTime\",\"httpMethod\":\"$context.httpMethod\",\"path\":\"$context.path\",\"status\":\"$context.status\",\"responseLatency\":\"$context.responseLatency\",\"integrationLatency\":\"$context.integrationLatency\",\"userAgent\":\"$context.identity.userAgent\"}"
+      MethodSettings:
+        - DataTraceEnabled: true   # Enables Data Tracing
+          LoggingLevel: INFO       # Enables Logging
+          MetricsEnabled: true     # Enables Detailed Metrics
+          ResourcePath: "/*"       # Applies to all routes
+          HttpMethod: "*"          # Applies to all methods
+
+  QuickSightApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/apigateway/${QuickSightEmbedAPI}"
+      RetentionInDays: 30  # Set retention period (optional)
+
+
+  EmbedQuickSightFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.lambda_handler  
+      Runtime: python3.9         
+      CodeUri: ./          
+      MemorySize: 512
+      Timeout: 300  
+      Role: !GetAtt EmbedQuickSightLambdaAccessRole.Arn
+      Environment:
+        Variables:
+          CognitoClientId: !Ref cognitoclientid
+          CognitoDomainUrl: !Ref customdomain
+          DashboardRegion: !Ref dashboardregion
+          RoleArn: !GetAtt EmbedQuickSightLambdaAccessRole.Arn
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /   
+            Method: GET
+            RestApiId:
+              Ref: QuickSightEmbedAPI
+
+  EmbedQuickSightFunctionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Error alarm for EmbedQuickSightFunction Function
+      AlarmActions:
+        - !Ref snstopicarn
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref EmbedQuickSightFunction
+      Statistic: Sum
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      EvaluationPeriods: 1
+      Period: 60
+      TreatMissingData: notBreaching
+
+
+  ApiGateway5XXErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmActions:
+        - !Ref snstopicarn
+      AlarmDescription: "Api Gateway server-side errors captured"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Ref QuickSightEmbedAPI
+        - Name: Stage
+          Value: !Ref env
+      EvaluationPeriods: 1
+      MetricName: 5XXError
+      Namespace: "AWS/ApiGateway"
+      Period: 300
+      Statistic: Sum
+      Threshold: 0
+      TreatMissingData: notBreaching
+
+  ApiGateway4XXErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmActions:
+        - !Ref snstopicarn
+      AlarmDescription: "Api Gateway client-side errors captured"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Ref QuickSightEmbedAPI
+        - Name: Stage
+          Value: !Ref env
+      EvaluationPeriods: 1
+      MetricName: 4XXError
+      Namespace: "AWS/ApiGateway"
+      Period: 300
+      Statistic: Sum
+      Threshold: 0
+      TreatMissingData: notBreaching
+
+

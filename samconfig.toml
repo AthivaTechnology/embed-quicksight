@@ -18,5 +18,5 @@ region = "us-west-2"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
 disable_rollback = true
-parameter_overrides =  "env=\"dev\" cognitoclientid=\"193ctkb5tms277746rd4qtmm40\" dashboardregion=\"us-east-1\" customdomain=\"quicksight.lhgcts.com\" certificatearn=\"arn:aws:acm:us-east-1:382625484581:certificate/a0bd9264-a63e-41b9-8c3b-8e8910dc01f3\" zoneid=\"Z0605614LJCWQYTCT43U\""
+parameter_overrides =  "env=\"dev\" cognitoclientid=\"193ctkb5tms277746rd4qtmm40\" dashboardregion=\"us-west-2\" customdomain=\"quicksight.lhgcts.com\" certificatearn=\"arn:aws:acm:us-east-1:766717188698:certificate/b4944d5b-fad3-4c05-84d7-fc9433befc3b\" zoneid=\"Z06190785YV5YO9ELJ1E\""
 image_repositories = []

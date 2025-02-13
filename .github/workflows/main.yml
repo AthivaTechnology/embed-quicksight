@@ -1,4 +1,4 @@
-name: Call Reusable Workflow
+name:  Workflow for embed quicksight
 
 on:
   workflow_dispatch: 
@@ -7,12 +7,158 @@ on:
       - main
       - dev
     types: 
-      - closed  
+      - closed          
+
+permissions:
+  id-token: write
+  contents: read
+  actions: write
+  issues: write
+env:
+  AWS_REGION: "us-east-1"
+  DEV_AWS_ACCOUNT_ID: "382625484581"
+  DEV_AWS_IAM_ROLE_NAME: "Github-acition-oicd"              
+  PROD_AWS_REGION: "us-west-2"
+  PROD_AWS_ACCOUNT_ID: "766717188698"
+  PROD_AWS_IAM_ROLE_NAME: "leroi-gh-actions"       
+  GH_TOKEN: ${{ github.token }} 
 
 jobs:
-  invoke-reusable-workflow:
-    uses: AthivaTechnology/Reuseble-Pipeline/.github/workflows/sam-reusable.yml@main
-    with:
-      stack-name: quicksight-dashboard
-      dev-config-env: default
-      prod-config-env: prod
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'  
+    - name: Cache SAM CLI
+      id: cache-sam
+      uses: actions/cache@v4
+      with:
+        path: ~/.aws-sam-cli
+        key: ${{ runner.os }}-sam-cli-${{ hashFiles('**/*.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-sam-cli-
+
+    - name: Install SAM CLI if not cached
+      if: steps.cache-sam.outputs.cache-hit != 'true'
+      run: |
+        mkdir -p ~/.aws-sam-cli
+        curl -Lo sam-installation.zip https://github.com/aws/aws-sam-cli/releases/latest/download/aws-sam-cli-linux-x86_64.zip
+        unzip sam-installation.zip -d ~/.aws-sam-cli
+        if [ ! -L /usr/local/bin/sam ]; then
+          sudo ln -s ~/.aws-sam-cli/dist/sam /usr/local/bin/sam
+        fi
+      shell: bash       
+    - name: Verify SAM CLI installation
+      run: sam --version    
+    - name: Build SAM Application
+      run: |
+        sam build
+      
+    - name: Upload SAM build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: sam-artifacts
+        path: |
+          .aws-sam/build     
+  dev_deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/download-artifact@v4
+        with:
+          name: sam-artifacts
+          path: .aws-sam/build
+      - name: Configure AWS credentials for Dev
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.DEV_AWS_ACCOUNT_ID }}:role/${{ env.DEV_AWS_IAM_ROLE_NAME }}
+          role-session-name: github-actions-session
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Deploy to Development
+        run: |
+          echo "y" | sam deploy --config-env default --capabilities CAPABILITY_NAMED_IAM --no-fail-on-empty-changeset --on-failure DO_NOTHING           
+
+  # create_change_set_prod:
+  #   needs: 
+  #     - build
+  #     - dev_deploy
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/main'
+  #   outputs:
+  #     change_set_name: ${{ steps.get_changeset.outputs.change_set_name }}
+  #     change_set_description: ${{ steps.describe_changeset.outputs.change_set_description }}
+
+  #   steps:        
+  #     - uses: actions/checkout@v2
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         name: sam-artifacts
+  #         path: .aws-sam/build
+  #     - name: Configure AWS credentials for Prod
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: arn:aws:iam::${{ env.PROD_AWS_ACCOUNT_ID }}:role/${{ env.PROD_AWS_IAM_ROLE_NAME }}
+  #         role-session-name: github-actions-session
+  #         aws-region: ${{ env.PROD_AWS_REGION }}
+  #     - name: Create Change Set for Production 
+  #       run: |
+  #         echo "y" | sam deploy --no-execute-changeset --config-env ${{ inputs.prod-config-env }} --capabilities CAPABILITY_NAMED_IAM --role-arn arn:aws:iam::766717188698:role/devops-bot --no-fail-on-empty-changeset        
+  #         printenv
+  #         echo ${GITHUB_RUN_ID}-${GITHUB_RUN_NUMBER}   
+           
+  #     - name: Get Latest Change Set Name
+  #       id: get_changeset
+  #       run: |
+  #         change_set_name=$(aws cloudformation list-change-sets --stack-name ${{ inputs.stack-name }} --query 'Summaries | sort_by(@, &CreationTime) | [-1].ChangeSetName' --output text)
+  #         echo "::set-output name=change_set_name::$change_set_name"
+
+  #     - name: Enhanced Change Set
+  #       run: |
+  #          aws cloudformation describe-change-set --change-set-name ${{ steps.get_changeset.outputs.change_set_name }}   --stack-name ${{ inputs.stack-name }}  --include-property-values            
+ 
+  #     - name: Describe Change Set
+  #       id: describe_changeset
+  #       run: |
+  #         change_set_description=$(aws cloudformation describe-change-set --change-set-name ${{ steps.get_changeset.outputs.change_set_name }} --stack-name ${{ inputs.stack-name }} --include-property-values)
+  #         echo "change_set_description=${change_set_description}" >> output.txt
+
+  # manual_approval:
+  #   runs-on: ubuntu-latest
+  #   needs: create_change_set_prod
+  #   steps:
+      
+  #     - uses: 8398a7/action-slack@v3
+  #       with:
+  #        status: ${{ job.status }}
+  #        fields: repo,message,commit,author,action,eventName,ref,workflow,job,took 
+  #       env:
+  #         SLACK_WEBHOOK_URL: https://hooks.slack.com/services/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    
+  #         SLACK_CHANNEL: github-action
+  #     - name: Manual Approval
+  #       uses: trstringer/manual-approval@v1
+  #       with:
+  #         secret: ${{ env.GH_TOKEN }}
+  #         minimum-approvals: 1
+  #         approvers: "karhick119,sarlife360,GopirengarajCha"
+
+     
+  # deploy_prod:
+  #   needs: [create_change_set_prod, manual_approval]
+  #   if: github.ref == 'refs/heads/main'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Configure AWS credentials for Prod
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: arn:aws:iam::${{ env.PROD_AWS_ACCOUNT_ID }}:role/${{ env.PROD_AWS_IAM_ROLE_NAME }}
+  #         role-session-name: github-actions-session
+  #         aws-region: ${{ env.PROD_AWS_REGION }}
+
+  #     - name: Execute Change Set for Production
+  #       run: |
+  #        aws cloudformation execute-change-set --stack-name quicksight --change-set-name ${{ needs.create_change_set_prod.outputs.change_set_name }}          

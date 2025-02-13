@@ -20,6 +20,9 @@ Parameters:
   zoneid:
     Type: String
     Description: Zone Id
+  snstopicarn:
+    Type: String
+    Description: error alarms sns topic
 
 
 Resources:
@@ -77,6 +80,16 @@ Resources:
         AllowMethods: "'DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
         AllowOrigin: "'*'"
+      TracingEnabled: true
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiGatewayLogGroup.Arn
+        Format: "{\"requestId\":\"$context.requestId\",\"ip\":\"$context.identity.sourceIp\",\"requestTime\":\"$context.requestTime\",\"httpMethod\":\"$context.httpMethod\",\"path\":\"$context.path\",\"status\":\"$context.status\",\"responseLatency\":\"$context.responseLatency\",\"integrationLatency\":\"$context.integrationLatency\",\"userAgent\":\"$context.identity.userAgent\"}"
+      MethodSettings:
+        - DataTraceEnabled: true   # Enables Data Tracing
+          LoggingLevel: INFO       # Enables Logging
+          MetricsEnabled: true     # Enables Detailed Metrics
+          ResourcePath: "/*"       # Applies to all routes
+          HttpMethod: "*"          # Applies to all methods
 
 
   EmbedQuickSightFunction:
@@ -103,5 +116,63 @@ Resources:
             RestApiId:
               Ref: QuickSightEmbedAPI
 
+  EmbedQuickSightFunctionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Error alarm for EmbedQuickSightFunction Function
+      AlarmActions:
+        - !Ref snstopicarn
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref EmbedQuickSightFunction
+      Statistic: Sum
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      EvaluationPeriods: 1
+      Period: 60
+      TreatMissingData: notBreaching
+
+
+  ApiGateway5XXErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmActions:
+        - !Ref snstopicarn
+      AlarmDescription: "Api Gateway server-side errors captured"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Ref QuickSightEmbedAPI
+        - Name: Stage
+          Value: !Ref env
+      EvaluationPeriods: 1
+      MetricName: 5XXError
+      Namespace: "AWS/ApiGateway"
+      Period: 300
+      Statistic: Sum
+      Threshold: 0
+      TreatMissingData: notBreaching
+
+  ApiGateway4XXErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmActions:
+        - !Ref snstopicarn
+      AlarmDescription: "Api Gateway client-side errors captured"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Ref QuickSightEmbedAPI
+        - Name: Stage
+          Value: !Ref env
+      EvaluationPeriods: 1
+      MetricName: 4XXError
+      Namespace: "AWS/ApiGateway"
+      Period: 300
+      Statistic: Sum
+      Threshold: 0
+      TreatMissingData: notBreaching
 
 

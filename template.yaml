@@ -1,0 +1,108 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  env:
+    Type: String
+    Description: Deployment Env
+  # Metric Name Sapce
+  cognitoclientid:
+    Type: String
+    Description: Cognito Client Id
+  customdomain:
+    Type: String
+    Description: API Custom domain
+  dashboardregion:
+    Type: String
+    Description: Quick Sight Dashboard Region
+  certificatearn:
+    Type: String
+    Description: Certificate ARN
+  zoneid:
+    Type: String
+    Description: Zone Id
+
+
+Resources:
+
+  EmbedQuickSightLambdaAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: QuickSightPermissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - quicksight:GenerateEmbedUrlForRegisteredUser
+                  - quicksight:SearchDashboards
+                  - quicksight:DescribeUser
+                  - quicksight:RegisterUser
+                  - quicksight:CreateGroup
+                  - quicksight:CreateGroupMembership
+                Resource: "*"
+        - PolicyName: CloudWatchAndIAMPermissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - iam:*OpenIDConnectProvider*
+                Resource: "*"
+      RoleName: !Sub "${AWS::StackName}--lambda-access-role"
+      
+  QuickSightEmbedAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref env
+      Domain:
+        DomainName: !Ref customdomain 
+        CertificateArn: !Ref certificatearn 
+        EndpointConfiguration: EDGE
+        Route53:
+          HostedZoneId: !Ref zoneid
+      Cors:
+        AllowMethods: "'DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+
+
+  EmbedQuickSightFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.lambda_handler  
+      Runtime: python3.9         # Python runtime
+      CodeUri: ./           # Path to the application code
+      MemorySize: 512
+      Timeout: 300  
+      Role: !GetAtt EmbedQuickSightLambdaAccessRole.Arn
+      Environment:
+        Variables:
+          CognitoClientId: !Ref cognitoclientid
+          CognitoDomainUrl: !Ref customdomain
+          DashboardRegion: !Ref dashboardregion
+          RoleArn: !GetAtt EmbedQuickSightLambdaAccessRole.Arn
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /    # Proxy all paths
+            Method: GET
+            RestApiId:
+              Ref: QuickSightEmbedAPI
+
+
+

@@ -5,7 +5,6 @@ Parameters:
   env:
     Type: String
     Description: Deployment Env
-  # Metric Name Sapce
   cognitoclientid:
     Type: String
     Description: Cognito Client Id
@@ -84,8 +83,8 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: app.lambda_handler  
-      Runtime: python3.9         # Python runtime
-      CodeUri: ./           # Path to the application code
+      Runtime: python3.9         
+      CodeUri: ./          
       MemorySize: 512
       Timeout: 300  
       Role: !GetAtt EmbedQuickSightLambdaAccessRole.Arn
@@ -99,7 +98,7 @@ Resources:
         Api:
           Type: Api
           Properties:
-            Path: /    # Proxy all paths
+            Path: /   
             Method: GET
             RestApiId:
               Ref: QuickSightEmbedAPI

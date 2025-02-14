@@ -10,9 +10,9 @@ parameter_overrides = "env=\"dev\" cognitouserpoolid=\"us-east-1_ISLA2G2ob\" cog
 image_repositories = []
 
 [prod.deploy.parameters]
-stack_name = "embed-quicksight"
+stack_name = "embedded-quicksight"
 resolve_s3 = true
-s3_prefix = "embed-quicksight"
+s3_prefix = "embedded-quicksight"
 region = "us-west-2"
 confirm_changeset = true
 capabilities = "CAPABILITY_NAMED_IAM"

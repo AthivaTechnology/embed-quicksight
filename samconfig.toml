@@ -16,5 +16,5 @@ s3_prefix = "embedded-quicksight"
 region = "us-west-2"
 confirm_changeset = true
 capabilities = "CAPABILITY_NAMED_IAM"
-parameter_overrides = "env=\"prod\" cognitouserpoolid=\"us-west-2_AYGKrSQtH\"  cognitoclientid=\"193ctkb5tms277746rd4qtmm40\" dashboardregion=\"us-west-2\" customdomain=\"quicksight.lhgcts.com\"  cognitodomain=\"https://quicksight.auth.us-west-2.amazoncognito.com\" certificatearn=\"arn:aws:acm:us-east-1:766717188698:certificate/b4944d5b-fad3-4c05-84d7-fc9433befc3b\" zoneid=\"Z06190785YV5YO9ELJ1E\" snstopicarn=\"arn:aws:sns:us-west-2:766717188698:leadgen-sns-topic\""
+parameter_overrides = "env=\"prod\" cognitouserpoolid=\"us-west-2_AYGKrSQtH\"  cognitoclientid=\"193ctkb5tms277746rd4qtmm40\" dashboardregion=\"us-west-2\" customdomain=\"dashboards-quicksight.lhgcts.com\"  cognitodomain=\"https://quicksight.auth.us-west-2.amazoncognito.com\" certificatearn=\"arn:aws:acm:us-east-1:766717188698:certificate/b4944d5b-fad3-4c05-84d7-fc9433befc3b\" zoneid=\"Z06190785YV5YO9ELJ1E\" snstopicarn=\"arn:aws:sns:us-west-2:766717188698:leadgen-sns-topic\""
 image_repositories = []

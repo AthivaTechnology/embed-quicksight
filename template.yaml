@@ -1,13 +1,19 @@
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 
 Parameters:
   env:
     Type: String
     Description: Deployment Env
+  cognitouserpoolid:
+    Type: String
+    Description: Cognito user pool id
   cognitoclientid:
     Type: String
     Description: Cognito Client Id
+  cognitodomain:
+    Type: String
+    Description: Cognito Domain URL
   customdomain:
     Type: String
     Description: API Custom domain
@@ -24,10 +30,39 @@ Parameters:
     Type: String
     Description: error alarms sns topic
 
-
 Resources:
+  CognitoOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      ClientIdList:
+        - !Ref cognitoclientid
+      Url:
+        Fn::Sub: https://cognito-idp.${AWS::Region}.amazonaws.com/${cognitouserpoolid}
 
-  EmbedQuickSightLambdaAccessRole:
+  CognitoOIDCProviderRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-quicksight-access-role"
+      AssumeRolePolicyDocument: !Sub |
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {
+                        "Federated": "${CognitoOIDCProvider}"
+                    },
+                    "Action": "sts:AssumeRoleWithWebIdentity",
+                    "Condition": {
+                        "StringEquals": {
+                            "cognito-idp.${AWS::Region}.amazonaws.com/${cognitouserpoolid}:aud": "${cognitoclientid}"
+                        }
+                    }
+                }
+            ]
+        }
+
+  EmbeddedQuicksightLambdaAccessRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -65,14 +100,14 @@ Resources:
                   - iam:*OpenIDConnectProvider*
                 Resource: "*"
       RoleName: !Sub "${AWS::StackName}--lambda-access-role"
-      
-  QuickSightEmbedAPI:
+
+  QuicksightEmbeddedAccessAPI:
     Type: AWS::Serverless::Api
     Properties:
       StageName: !Ref env
       Domain:
-        DomainName: !Ref customdomain 
-        CertificateArn: !Ref certificatearn 
+        DomainName: !Ref customdomain
+        CertificateArn: !Ref certificatearn
         EndpointConfiguration: EDGE
         Route53:
           HostedZoneId: !Ref zoneid
@@ -82,47 +117,46 @@ Resources:
         AllowOrigin: "'*'"
       TracingEnabled: true
       AccessLogSetting:
-        DestinationArn: !GetAtt QuickSightApiLogGroup.Arn
-        Format: "{\"requestId\":\"$context.requestId\",\"ip\":\"$context.identity.sourceIp\",\"requestTime\":\"$context.requestTime\",\"httpMethod\":\"$context.httpMethod\",\"path\":\"$context.path\",\"status\":\"$context.status\",\"responseLatency\":\"$context.responseLatency\",\"integrationLatency\":\"$context.integrationLatency\",\"userAgent\":\"$context.identity.userAgent\"}"
+        DestinationArn: !GetAtt QuicksightEmbeddedAccessAPILogGroup.Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","path":"$context.path","status":"$context.status","responseLatency":"$context.responseLatency","integrationLatency":"$context.integrationLatency","userAgent":"$context.identity.userAgent"}'
       MethodSettings:
-        - DataTraceEnabled: true   # Enables Data Tracing
-          LoggingLevel: INFO       # Enables Logging
-          MetricsEnabled: true     # Enables Detailed Metrics
-          ResourcePath: "/*"       # Applies to all routes
-          HttpMethod: "*"          # Applies to all methods
+        - DataTraceEnabled: true # Enables Data Tracing
+          LoggingLevel: INFO # Enables Logging
+          MetricsEnabled: true # Enables Detailed Metrics
+          ResourcePath: "/*" # Applies to all routes
+          HttpMethod: "*" # Applies to all methods
 
-  QuickSightApiLogGroup:
+  QuicksightEmbeddedAccessAPILogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/aws/apigateway/${QuickSightEmbedAPI}"
-      RetentionInDays: 30  # Set retention period (optional)
+      LogGroupName: !Sub "/aws/apigateway/${QuicksightEmbeddedAccessAPI}"
+      RetentionInDays: 30 # Set retention period (optional)
 
-
-  EmbedQuickSightFunction:
+  QuicksightEmbeddedAccessFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: app.lambda_handler  
-      Runtime: python3.9         
-      CodeUri: ./          
+      Handler: app.lambda_handler
+      Runtime: python3.9
+      CodeUri: ./
       MemorySize: 512
-      Timeout: 300  
-      Role: !GetAtt EmbedQuickSightLambdaAccessRole.Arn
+      Timeout: 300
+      Role: !GetAtt EmbeddedQuicksightLambdaAccessRole.Arn
       Environment:
         Variables:
           CognitoClientId: !Ref cognitoclientid
-          CognitoDomainUrl: !Ref customdomain
+          CognitoDomainUrl: !Ref cognitodomain
           DashboardRegion: !Ref dashboardregion
-          RoleArn: !GetAtt EmbedQuickSightLambdaAccessRole.Arn
+          RoleArn: !GetAtt CognitoOIDCProviderRole.Arn
       Events:
         Api:
           Type: Api
           Properties:
-            Path: /   
+            Path: /
             Method: GET
             RestApiId:
-              Ref: QuickSightEmbedAPI
+              Ref: QuicksightEmbeddedAccessAPI
 
-  EmbedQuickSightFunctionErrorAlarm:
+  QuicksightEmbeddedAccessFunctionErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmDescription: Error alarm for EmbedQuickSightFunction Function
@@ -132,14 +166,13 @@ Resources:
       MetricName: Errors
       Dimensions:
         - Name: FunctionName
-          Value: !Ref EmbedQuickSightFunction
+          Value: !Ref QuicksightEmbeddedAccessFunction
       Statistic: Sum
       ComparisonOperator: GreaterThanThreshold
       Threshold: 0
       EvaluationPeriods: 1
       Period: 60
       TreatMissingData: notBreaching
-
 
   ApiGateway5XXErrorAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -150,7 +183,7 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       Dimensions:
         - Name: ApiName
-          Value: !Ref QuickSightEmbedAPI
+          Value: !Ref QuicksightEmbeddedAccessAPI
         - Name: Stage
           Value: !Ref env
       EvaluationPeriods: 1
@@ -170,7 +203,7 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       Dimensions:
         - Name: ApiName
-          Value: !Ref QuickSightEmbedAPI
+          Value: !Ref QuicksightEmbeddedAccessAPI
         - Name: Stage
           Value: !Ref env
       EvaluationPeriods: 1
@@ -180,5 +213,3 @@ Resources:
       Statistic: Sum
       Threshold: 0
       TreatMissingData: notBreaching
-
-
